@@ -486,7 +486,36 @@ n8n.seudominio.com.br        →  54.123.45.67
 evolution.seudominio.com.br  →  54.123.45.67
 ```
 
+## 🌐 **PASSO 12: Adicionar Permissões IAM  (ANTES de rodar o script)**
 
+Vá ao Console AWS e configure:
+IAM → Usuários → Seu usuário → Permissões
+
+Adicione esta política (inline policy):
+
+```bash
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Action": [
+                "s3:PutObject",
+                "s3:GetObject",
+                "s3:DeleteObject",
+                "s3:ListBucket",
+                "s3:GetBucketLocation",
+                "s3:PutObjectAcl"
+            ],
+            "Resource": [
+                "arn:aws:s3:::SEU_BUCKET_NAME",
+                "arn:aws:s3:::SEU_BUCKET_NAME/*"
+            ]
+        }
+    ]
+}
+```
+> ⚠️ SUBSTITUA SEU_BUCKET_NAME pelo nome real do seu bucket!
 
 # 🔧 Otimizações para Maximizar o Tempo
 
