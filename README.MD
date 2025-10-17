@@ -28,7 +28,7 @@
 
 ---
 
-<p align="center"> 🤖 Automatização de infraestrutura na Amazon AWS
+<p align="center"> 🤖 Automatização de infraestrutura na Amazon AWS 🤖
     <br> 
 </p>
 
