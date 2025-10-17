@@ -28,7 +28,7 @@
 
 ---
 
-<p align="center"> 🤖 Few lines describing what your bot does.
+<p align="center"> 🤖 Automatização de infraestrutura na Amazon AWS
     <br> 
 </p>
 
@@ -46,7 +46,6 @@
 [Criar a instância EC2](#criar-a-instância-ec2)
 
 [Otimizações para Maximizar o tempo](#-otimizações-para-maximizar-o-tempo)
-
 
 [Testes](#-teste-completo-de-uploaddownload)
 
@@ -191,6 +190,8 @@ Duração extra: $100 ÷ $19.23 = 5.2 meses
 # ⚠️ Só para testes, não produção
 ```
 
+#### Opção 3: Oracle Server (Gratuito)
+
 # Criar Bucket S3 para AlobExpress
 
 Para que o script funcione de maneira correta, você precisa criar um Bucket no S3 da sua AWS
@@ -262,8 +263,6 @@ Preencha conforme abaixo:
 ```bash
 ⚪ Object Lock: Disabled
 ```
-
-
 
 # Criar a instância EC2
 
@@ -517,9 +516,8 @@ Adicione esta política (inline policy):
 ```
 > ⚠️ SUBSTITUA SEU_BUCKET_NAME pelo nome real do seu bucket!
 
+
 # 🔧 Otimizações para Maximizar o Tempo
-
-
 
 ## 1. Reduzir Custos de S3 ($1.04/mês → $0.30/mês)
 
@@ -810,7 +808,6 @@ Duração: ⚠️ 12-15 meses (com otimizações)
 ```bash
 4 vCPUs ARM, 24GB RAM, 200GB storage = GRÁTIS SEMPRE
 ```
-
 
 
 # 🚨 Problemas Comuns
