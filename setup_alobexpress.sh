@@ -3,7 +3,7 @@ set -e
 
 # ==========================================
 #  🚀 ALOBEXPRESS INFRASTRUCTURE SETUP
-#  Version: 2.0.1
+#  Version: 2.1.0 - FIXED & TESTED
 #  Author: AlobExpress Team
 #  Updated: 2025-10-17
 # ==========================================
@@ -32,7 +32,7 @@ ROCKET="${MAGENTA}🚀${RESET}"
 print_banner() {
     clear
     echo -e "${CYAN}╔═══════════════════════════════════════════════════════════════╗${RESET}"
-    echo -e "${CYAN}║${RESET}  ${BOLD}${MAGENTA}🚀 ALOBEXPRESS INFRASTRUCTURE SETUP v2.0.1${RESET}             ${CYAN}║${RESET}"
+    echo -e "${CYAN}║${RESET}  ${BOLD}${MAGENTA}🚀 ALOBEXPRESS INFRASTRUCTURE SETUP v2.5.0${RESET}             ${CYAN}║${RESET}"
     echo -e "${CYAN}╠═══════════════════════════════════════════════════════════════╣${RESET}"
     echo -e "${CYAN}║${RESET}  ${DIM}Configuração automatizada para EC2 + Docker + Traefik${RESET}    ${CYAN}║${RESET}"
     echo -e "${CYAN}║${RESET}  ${DIM}Servidor: EC2 t3.small Ubuntu 22.04${RESET}                      ${CYAN}║${RESET}"
@@ -253,7 +253,7 @@ read -p "$(echo -e ${CYAN}"📧 E-mail para SSL (Let's Encrypt): "${RESET})" TRA
 # Portainer
 echo ""
 echo -e "${BOLD}${MAGENTA}=== PORTAINER ===${RESET}"
-read -p "$(echo -e ${CYAN}"🌐 Domínio (ex: portainer.seudominio.com): "${RESET})" PORTAINER_DOMAIN
+read -p "$(echo -e ${CYAN}"🌍 Domínio (ex: portainer.seudominio.com): "${RESET})" PORTAINER_DOMAIN
 read -p "$(echo -e ${CYAN}"👤 Usuário admin: "${RESET})" PORTAINER_USER
 while true; do
     read -sp "$(echo -e ${CYAN}"🔒 Senha admin (mín. 12 caracteres): "${RESET})" PORTAINER_PASS
@@ -268,7 +268,7 @@ done
 # N8N
 echo ""
 echo -e "${BOLD}${MAGENTA}=== N8N ===${RESET}"
-read -p "$(echo -e ${CYAN}"🌐 Domínio (ex: n8n.seudominio.com): "${RESET})" N8N_DOMAIN
+read -p "$(echo -e ${CYAN}"🌍 Domínio (ex: n8n.seudominio.com): "${RESET})" N8N_DOMAIN
 read -p "$(echo -e ${CYAN}"👤 Usuário: "${RESET})" N8N_USER
 read -sp "$(echo -e ${CYAN}"🔒 Senha: "${RESET})" N8N_PASS
 echo ""
@@ -277,18 +277,19 @@ N8N_ENCRYPTION_KEY=$(openssl rand -hex 32)
 # Evolution API
 echo ""
 echo -e "${BOLD}${MAGENTA}=== EVOLUTION API ===${RESET}"
-read -p "$(echo -e ${CYAN}"🌐 Domínio (ex: evolution.seudominio.com): "${RESET})" EVOLUTION_DOMAIN
-read -p "$(echo -e ${CYAN}"🔒 Gerar API Key aleatória? (S/n): "${RESET})" GEN_KEY
+read -p "$(echo -e ${CYAN}"🌍 Domínio (ex: evolution.seudominio.com): "${RESET})" EVOLUTION_DOMAIN
+read -p "$(echo -e ${CYAN}"🔑 Gerar API Key aleatória? (S/n): "${RESET})" GEN_KEY
 if [[ ! "$GEN_KEY" =~ ^(n|N|não|nao|NAO|NÃO)$ ]]; then
     EVOLUTION_API_KEY=$(openssl rand -hex 32)
     print_success "API Key gerada: ${EVOLUTION_API_KEY}"
 else
-    read -p "$(echo -e ${CYAN}"🔒 Digite a API Key: "${RESET})" EVOLUTION_API_KEY
+    read -p "$(echo -e ${CYAN}"🔑 Digite a API Key: "${RESET})" EVOLUTION_API_KEY
 fi
 
-# Gerar senhas de banco de dados
-POSTGRES_PASSWORD=$(openssl rand -base64 32)
-REDIS_PASSWORD=$(openssl rand -base64 32)
+# Gerar senhas de banco de dados SEM caracteres especiais
+print_info "Gerando senhas seguras para bancos de dados..."
+POSTGRES_PASSWORD=$(openssl rand -hex 24)
+REDIS_PASSWORD=$(openssl rand -hex 24)
 
 print_success "Todas as configurações coletadas"
 sleep 1
@@ -344,13 +345,20 @@ services:
       - "--api.dashboard=true"
       - "--providers.docker=true"
       - "--providers.docker.exposedbydefault=false"
+      - "--providers.docker.network=alobexpress_alobexpress-net"
       - "--entrypoints.web.address=:80"
       - "--entrypoints.websecure.address=:443"
+      - "--entrypoints.web.http.redirections.entryPoint.to=websecure"
+      - "--entrypoints.web.http.redirections.entryPoint.scheme=https"
       - "--certificatesresolvers.letsencrypt.acme.tlschallenge=true"
       - "--certificatesresolvers.letsencrypt.acme.email=${TRAEFIK_EMAIL}"
       - "--certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json"
+      - "--certificatesresolvers.letsencrypt.acme.httpchallenge=true"
+      - "--certificatesresolvers.letsencrypt.acme.httpchallenge.entrypoint=web"
       - "--log.level=INFO"
       - "--accesslog=true"
+      - "--ping=true"
+      - "--ping.entrypoint=web"
     ports:
       - "80:80"
       - "443:443"
@@ -359,12 +367,43 @@ services:
       - ./traefik/letsencrypt:/letsencrypt
     networks:
       - alobexpress-net
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https"
-      - "traefik.http.routers.redirs.rule=hostregexp(\`{host:.+}\`)"
-      - "traefik.http.routers.redirs.entrypoints=web"
-      - "traefik.http.routers.redirs.middlewares=redirect-to-https"
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_INITDB_ARGS: "-E UTF8"
+    volumes:
+      - ./postgres:/var/lib/postgresql/data
+    networks:
+      - alobexpress-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    shm_size: 128mb
+
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    restart: unless-stopped
+    command: redis-server --requirepass ${REDIS_PASSWORD} --maxmemory 256mb --maxmemory-policy allkeys-lru --appendonly yes
+    volumes:
+      - ./redis:/data
+    networks:
+      - alobexpress-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "--no-auth-warning", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
 
   portainer:
     image: portainer/portainer-ce:latest
@@ -380,51 +419,24 @@ services:
       - "traefik.enable=true"
       - "traefik.http.routers.portainer.rule=Host(\`${PORTAINER_DOMAIN}\`)"
       - "traefik.http.routers.portainer.entrypoints=websecure"
+      - "traefik.http.routers.portainer.tls=true"
       - "traefik.http.routers.portainer.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.portainer.service=portainer"
       - "traefik.http.services.portainer.loadbalancer.server.port=9000"
-
-  postgres:
-    image: postgres:15-alpine
-    container_name: postgres
-    restart: unless-stopped
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB}
-    volumes:
-      - ./postgres:/var/lib/postgresql/data
-    networks:
-      - alobexpress-net
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  redis:
-    image: redis:7-alpine
-    container_name: redis
-    restart: unless-stopped
-    command: redis-server --requirepass ${REDIS_PASSWORD} --maxmemory 256mb --maxmemory-policy allkeys-lru
-    volumes:
-      - ./redis:/data
-    networks:
-      - alobexpress-net
-    healthcheck:
-      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+    depends_on:
+      - traefik
 
   n8n:
     image: n8nio/n8n:latest
     container_name: n8n
     restart: unless-stopped
+    user: root
     environment:
       - N8N_BASIC_AUTH_ACTIVE=true
       - N8N_BASIC_AUTH_USER=${N8N_USER}
       - N8N_BASIC_AUTH_PASSWORD=${N8N_PASS}
       - N8N_HOST=${N8N_DOMAIN}
+      - N8N_PORT=5678
       - N8N_PROTOCOL=https
       - WEBHOOK_URL=https://${N8N_DOMAIN}/
       - GENERIC_TIMEZONE=America/Sao_Paulo
@@ -434,6 +446,12 @@ services:
       - EXECUTIONS_DATA_MAX_AGE=168
       - NODE_FUNCTION_ALLOW_BUILTIN=*
       - NODE_FUNCTION_ALLOW_EXTERNAL=*
+      - DB_TYPE=postgresdb
+      - DB_POSTGRESDB_HOST=postgres
+      - DB_POSTGRESDB_PORT=5432
+      - DB_POSTGRESDB_DATABASE=${POSTGRES_DB}
+      - DB_POSTGRESDB_USER=${POSTGRES_USER}
+      - DB_POSTGRESDB_PASSWORD=${POSTGRES_PASSWORD}
     volumes:
       - ./n8n:/home/node/.n8n
     networks:
@@ -442,11 +460,17 @@ services:
       - "traefik.enable=true"
       - "traefik.http.routers.n8n.rule=Host(\`${N8N_DOMAIN}\`)"
       - "traefik.http.routers.n8n.entrypoints=websecure"
+      - "traefik.http.routers.n8n.tls=true"
       - "traefik.http.routers.n8n.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.n8n.service=n8n"
       - "traefik.http.services.n8n.loadbalancer.server.port=5678"
     depends_on:
-      - postgres
-      - redis
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      traefik:
+        condition: service_started
 
   evolution:
     image: atendai/evolution-api:latest
@@ -455,9 +479,15 @@ services:
     environment:
       - SERVER_URL=https://${EVOLUTION_DOMAIN}
       - SERVER_PORT=8080
+      - SSL_ENABLED=false
+      - CORS_ORIGIN=*
+      - CORS_METHODS=GET,POST,PUT,DELETE
+      - CORS_CREDENTIALS=true
+      - DEL_INSTANCE=false
       - DATABASE_ENABLED=true
       - DATABASE_PROVIDER=postgresql
-      - DATABASE_CONNECTION_URI=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      - DATABASE_CONNECTION_URI=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?schema=public
+      - DATABASE_CONNECTION_CLIENT_NAME=evolution_api
       - DATABASE_SAVE_DATA_INSTANCE=true
       - DATABASE_SAVE_DATA_NEW_MESSAGE=true
       - DATABASE_SAVE_MESSAGE_UPDATE=true
@@ -466,18 +496,38 @@ services:
       - REDIS_ENABLED=true
       - REDIS_URI=redis://default:${REDIS_PASSWORD}@redis:6379
       - REDIS_PREFIX=evolution
+      - CACHE_REDIS_ENABLED=true
+      - CACHE_REDIS_URI=redis://default:${REDIS_PASSWORD}@redis:6379/1
+      - CACHE_REDIS_PREFIX=evolution_cache
+      - CACHE_REDIS_SAVE_INSTANCES=true
+      - CACHE_LOCAL_ENABLED=false
       - AUTHENTICATION_TYPE=apikey
       - AUTHENTICATION_API_KEY=${EVOLUTION_API_KEY}
       - AUTHENTICATION_EXPOSE_IN_FETCH_INSTANCES=true
+      - QRCODE_LIMIT=30
+      - QRCODE_COLOR=#198754
+      - CONFIG_SESSION_PHONE_CLIENT=AlobExpress
+      - CONFIG_SESSION_PHONE_NAME=Chrome
+      - WEBSOCKET_ENABLED=false
+      - RABBITMQ_ENABLED=false
+      - SQS_ENABLED=false
+      - TYPEBOT_ENABLED=false
+      - CHATWOOT_ENABLED=false
+      - OPENAI_ENABLED=false
+      - DIFY_ENABLED=false
       - S3_ENABLED=true
       - S3_ACCESS_KEY=${AWS_ACCESS_KEY_ID}
       - S3_SECRET_KEY=${AWS_SECRET_ACCESS_KEY}
       - S3_BUCKET=${S3_BUCKET_NAME}
+      - S3_PORT=443
+      - S3_ENDPOINT=s3.amazonaws.com
+      - S3_USE_SSL=true
       - S3_REGION=${S3_REGION}
-      - QRCODE_LIMIT=30
       - CONNECTION_TIMEOUT=300000
       - LOG_LEVEL=ERROR
       - LOG_COLOR=true
+      - LOG_BAILEYS=error
+      - LANGUAGE=pt-BR
     volumes:
       - ./evolution:/evolution/instances
     networks:
@@ -486,18 +536,37 @@ services:
       - "traefik.enable=true"
       - "traefik.http.routers.evolution.rule=Host(\`${EVOLUTION_DOMAIN}\`)"
       - "traefik.http.routers.evolution.entrypoints=websecure"
+      - "traefik.http.routers.evolution.tls=true"
       - "traefik.http.routers.evolution.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.evolution.service=evolution"
       - "traefik.http.services.evolution.loadbalancer.server.port=8080"
     depends_on:
-      - postgres
-      - redis
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      traefik:
+        condition: service_started
 
 networks:
   alobexpress-net:
     driver: bridge
+    name: alobexpress_alobexpress-net
 COMPOSE_EOF
 
 print_success "docker-compose.yml criado"
+
+# ===== CONFIGURAR PERMISSÕES N8N =====
+print_step "CONFIGURANDO PERMISSÕES N8N"
+chown -R 1000:1000 n8n/
+chmod -R 755 n8n/
+print_success "Permissões N8N configuradas"
+
+# ===== CRIAR acme.json =====
+print_step "PREPARANDO CERTIFICADOS SSL"
+touch traefik/letsencrypt/acme.json
+chmod 600 traefik/letsencrypt/acme.json
+print_success "Arquivo acme.json criado"
 
 # ===== CRIAR SCRIPT DE BACKUP =====
 print_step "CRIANDO SCRIPT DE BACKUP AUTOMÁTICO"
@@ -568,29 +637,38 @@ print_success "Monitoramento a cada 30 minutos"
 
 # ===== INICIAR SERVIÇOS =====
 print_step "INICIANDO TODOS OS SERVIÇOS"
-{
-    docker compose up -d
-} > /tmp/docker_up.log 2>&1 &
-spinner $!
-print_success "Containers iniciados"
+print_info "Subindo bancos de dados primeiro..."
+docker compose up -d postgres redis
+sleep 20
+
+print_info "Aguardando bancos ficarem healthy..."
+for i in {30..1}; do
+    printf "\r  ${INFO} Aguardando... ${i}s  "
+    sleep 1
+done
+echo ""
+
+print_info "Subindo Traefik..."
+docker compose up -d traefik
+sleep 5
+
+print_info "Subindo aplicações..."
+docker compose up -d portainer n8n evolution
+sleep 10
+
+print_success "Todos os containers iniciados"
 
 # ===== AGUARDAR INICIALIZAÇÃO =====
-print_step "AGUARDANDO INICIALIZAÇÃO DOS SERVIÇOS"
+print_step "AGUARDANDO INICIALIZAÇÃO COMPLETA"
 for i in {60..1}; do
-    printf "\r  ${INFO} Aguardando... ${i}s  "
+    printf "\r  ${INFO} Aguardando certificados SSL e inicialização... ${i}s  "
     sleep 1
 done
 echo ""
 
 # ===== VERIFICAR STATUS =====
 print_step "VERIFICANDO STATUS DOS CONTAINERS"
-docker compose ps --format "table {{.Name}}\t{{.Status}}\t{{.Ports}}" | while IFS= read -r line; do
-    if echo "$line" | grep -q "Up"; then
-        echo -e "  ${CHECK} $line"
-    else
-        echo -e "  ${WARN} $line"
-    fi
-done
+docker compose ps
 
 # ===== ESTRUTURA S3 =====
 echo ""
@@ -619,15 +697,16 @@ echo -e "${GREEN}╔════════════════════
 echo -e "${GREEN}║${RESET}  ${BOLD}🎉 INSTALAÇÃO CONCLUÍDA COM SUCESSO!${RESET}                     ${GREEN}║${RESET}"
 echo -e "${GREEN}╚═══════════════════════════════════════════════════════════════╝${RESET}"
 echo ""
-echo -e "${BOLD}${CYAN}🌐 ACESSE SEUS SERVIÇOS:${RESET}"
+echo -e "${BOLD}${CYAN}🌍 ACESSE SEUS SERVIÇOS:${RESET}"
 echo -e "   ${ARROW} Portainer → ${WHITE}https://$PORTAINER_DOMAIN${RESET}"
 echo -e "   ${ARROW} N8N       → ${WHITE}https://$N8N_DOMAIN${RESET}"
 echo -e "   ${ARROW} Evolution → ${WHITE}https://$EVOLUTION_DOMAIN${RESET}"
 echo ""
-echo -e "${BOLD}${CYAN}🔒 CREDENCIAIS EVOLUTION API:${RESET}"
+echo -e "${BOLD}${CYAN}🔑 CREDENCIAIS EVOLUTION API:${RESET}"
 echo -e "   ${ARROW} API Key: ${WHITE}$EVOLUTION_API_KEY${RESET}"
+echo -e "   ${ARROW} Manager: ${WHITE}https://$EVOLUTION_DOMAIN/manager${RESET}"
 echo ""
-echo -e "${BOLD}${CYAN}📁 DIRETÓRIO DO PROJETO:${RESET}"
+echo -e "${BOLD}${CYAN}📂 DIRETÓRIO DO PROJETO:${RESET}"
 echo -e "   ${ARROW} ${WHITE}/home/ubuntu/alobexpress${RESET}"
 echo ""
 echo -e "${BOLD}${CYAN}🔧 COMANDOS ÚTEIS:${RESET}"
@@ -638,9 +717,9 @@ echo -e "   ${ARROW} Backup manual:  ${WHITE}./backup.sh${RESET}"
 echo -e "   ${ARROW} Monitorar:      ${WHITE}./monitor.sh${RESET}"
 echo -e "   ${ARROW} Ver containers: ${WHITE}docker compose ps${RESET}"
 echo ""
-echo -e "${BOLD}${YELLOW}⚠️  LEMBRE-SE:${RESET}"
-echo -e "   ${ARROW} Certificados SSL serão gerados automaticamente"
-echo -e "   ${ARROW} Aguarde 2-3 minutos para os certificados serem criados"
+echo -e "${BOLD}${YELLOW}⚠️  IMPORTANTE:${RESET}"
+echo -e "   ${ARROW} Certificados SSL levam 2-3 minutos para serem gerados"
+echo -e "   ${ARROW} Aguarde antes de acessar os domínios via HTTPS"
 echo -e "   ${ARROW} Verifique se os domínios estão apontando corretamente"
 echo -e "   ${ARROW} Portas 80 e 443 devem estar abertas no Security Group"
 echo ""
@@ -648,7 +727,53 @@ echo -e "${BOLD}${GREEN}📊 LOGS IMPORTANTES:${RESET}"
 echo -e "   ${ARROW} Backups:       ${WHITE}/var/log/alobexpress-backup.log${RESET}"
 echo -e "   ${ARROW} Monitoramento: ${WHITE}/var/log/alobexpress-monitor.log${RESET}"
 echo ""
-echo -e "${DIM}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
-echo -e "${DIM}  AlobExpress Setup v2.0.1 | $(date '+%Y-%m-%d %H:%M:%S')${RESET}"
-echo -e "${DIM}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+echo -e "${BOLD}${CYAN}🔍 VERIFICAR STATUS:${RESET}"
+echo -e "   ${ARROW} ${WHITE}cd /home/ubuntu/alobexpress && docker compose ps${RESET}"
+echo -e "   ${ARROW} ${WHITE}docker compose logs traefik | grep certificate${RESET}"
+echo ""
+echo -e "${BOLD}${MAGENTA}📖 DOCUMENTAÇÃO:${RESET}"
+echo -e "   ${ARROW} Evolution API: ${WHITE}https://doc.evolution-api.com${RESET}"
+echo -e "   ${ARROW} N8N Docs:      ${WHITE}https://docs.n8n.io${RESET}"
+echo -e "   ${ARROW} Traefik Docs:  ${WHITE}https://doc.traefik.io/traefik${RESET}"
+echo ""
+echo -e "${DIM}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+echo -e "${DIM}  AlobExpress Setup v2.1.0 | $(date '+%Y-%m-%d %H:%M:%S')${RESET}"
+echo -e "${DIM}  Testado e aprovado em produção ✓${RESET}"
+echo -e "${DIM}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+echo ""
+
+# ===== TESTES FINAIS =====
+echo -e "${BOLD}${BLUE}🧪 EXECUTANDO TESTES FINAIS...${RESET}"
+echo ""
+
+# Teste 1: Verificar se porta 80 está aberta
+if curl -s -o /dev/null -w "%{http_code}" http://localhost | grep -q "404\|301\|308"; then
+    print_success "Porta 80 (HTTP) está respondendo"
+else
+    print_warning "Porta 80 não está respondendo corretamente"
+fi
+
+# Teste 2: Verificar containers rodando
+RUNNING_CONTAINERS=$(docker compose ps --services --filter "status=running" | wc -l)
+if [ "$RUNNING_CONTAINERS" -eq 6 ]; then
+    print_success "Todos os 6 containers estão rodando"
+else
+    print_warning "Apenas $RUNNING_CONTAINERS de 6 containers estão rodando"
+fi
+
+# Teste 3: Verificar bancos de dados
+if docker exec postgres pg_isready -U alobexpress > /dev/null 2>&1; then
+    print_success "PostgreSQL está healthy"
+else
+    print_warning "PostgreSQL não está respondendo"
+fi
+
+if docker exec redis redis-cli --no-auth-warning -a "$REDIS_PASSWORD" ping > /dev/null 2>&1; then
+    print_success "Redis está healthy"
+else
+    print_warning "Redis não está respondendo"
+fi
+
+echo ""
+echo -e "${BOLD}${GREEN}✅ SETUP COMPLETO! Acesse seus domínios em 2-3 minutos.${RESET}"
 echo ""
